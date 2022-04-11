@@ -1,0 +1,66 @@
+on:
+  - push
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.7"
+          - os: ubuntu-latest
+            python-version: "3.8"
+          - os: ubuntu-latest
+            python-version: "3.9"
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Setup | Update submodules
+        run: |
+          cd torchrec
+          git submodule init
+          git submodule update --remote --recursive
+          cd third_party/fbgemm/
+          git submodule sync
+          git submodule update --init --recursive
+          git log
+
+      - name: Setup | Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
+
+      - name: Setup | PyTorch
+        run: |
+          pip install --pre torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+
+      - name: Setup | TorchRec dependencies
+        run: |
+          cd torchrec
+          pip install -r requirements.txt
+
+      - name: Setup | Build TorchRec
+        run: |
+          cd torchrec
+          python setup.py bdist_wheel --package_name torchrec-test-cpu --cpu_only
+
+      - name: Setup | Install TorchRec
+        run: |
+          cd torchrec
+          pip install dist/torchrec_test_cpu-*.whl
+
+      - name: Setup | pytest
+        run: |
+          pip install pytest
+
+      - name: Test | pytest
+        run: |
+          cd torchrec
+          python -m pytest torchrec -v -s -W ignore::pytest.PytestCollectionWarning --continue-on-collection-errors -k 'not test_sharding_gloo_cw'
